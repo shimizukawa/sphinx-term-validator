@@ -8,6 +8,8 @@ docutils term validation extension
 
 __docformat__ = 'reStructuredText'
 
+import io
+import os
 import re
 import unicodedata
 
@@ -16,6 +18,10 @@ from docutils import nodes
 
 from sphinx import addnodes
 from sphinx.ext.todo import todo_node
+
+BASEDIR = os.path.dirname(os.path.abspath(__file__))
+
+NG_WORDS = []
 
 
 def validate_half_width_katakana(text, warn=lambda t:None):
@@ -162,71 +168,49 @@ def validate_ng_words(text, warn=lambda t:None):
 
     text2 = text
 
-    ng_words = (
-        (ur'だ。|である。', u'ですます調へ'),
-        (ur'読み終わる', u'読み終える'),
-        (ur'有りま', u'ありま'),
-        (ur'例え', u'たとえ'),
-        (ur'幾つ', u'いくつ'),
-        (ur'沢山', u'たくさん'),
-        (ur'様々', u'さまざま'),
-        (ur'[^行]為', u'ため'),
-        (ur'弊社', u'私たち'),
-        (ur'我々', u'私たち'),
-        (ur'私達', u'私たち'),
-        (ur'ご紹介', u'紹介'),
-        (ur'毎', u'ごと'),
-        (ur'下さい', u'ください'),
-        (ur'わか([ら-ろ])', u'分か（ら|り|る|れ|ろ）'),
-        (ur'有る', u'ある'),
-        (ur'無(く|い|し)', u'なく, ない, なし'),
-        (ur'をを', u'を'),
-        (ur'[^執]筆者', u'私たち'),
-        (ur'(する(こと|事)が(でき|出来|出き)|出来)[またる]', u'できます'),
-        (ur'あなたの', u'読者を引き合いに出さない'),
-        (ur'localhost', u'意味のあるサンプルにする'),
-        (ur'[\s\n]なので', u'このため'),
-        #(ur'やりやすく', u''),
-        (ur'ディレクトリー', u'ディレクトリ'),
-        (ur'ユーザー', u'ユーザ'),
-        (ur'サーバー', u'サーバ'),
-        (ur'プログラマー', u'プログラマ'),
-        (ur'コンピューター', u'コンピュータ'),
-        (ur'ビルダー', u'ビルダ'),
-        (ur'ヘッダー', u'ヘッダ'),
-        (ur'電子書籍リーダー', u'電子書籍リーダ'),
-        #(ur'フォルダ', u'ディレクトリ'),
-        #(ur'上がって', u''),
-        (ur'挙動になります', u''),
-        (ur'叩', u'壊れるから叩いちゃだめ'),
-        (ur'[①-⑳]', u'丸数字はNG'),
-        (ur'ePub', u'EPUB'),
-        (ur'Tex[^ti]', u'TeX'),
-        (ur'TeXLive', u'TeX Live'),
-        (ur'Mac[^a-zA-Z\s]', u'OS X'),
-        (ur'MacOS', u'OS X'),
-        (ur'Mac OS X', u'OS X'),
-        (ur'[ぁ-んァ-ヶー一-龠] [a-zA-Z0-9]', u'半角文字の前に空白を開けない'),
-        (ur'[a-zA-Z] [ぁ-んァ-ヶー一-龠]', u'半角文字の後ろに空白を開けない'),
-    )
-    for ng, good in ng_words:
+    for ng, good in NG_WORDS:
         if re.findall(ng, text):
             warn(u'NG word found: (%s -> %s)\n%s' % (ng, good, text))
 
     return text2
 
 
-validators = [
-    validate_half_width_katakana,
-    validate_parenthesis,
-    validate_question_exclamation,
-    validate_punctuation_mark,
-    validate_space_in_number_of_unit,
-    validate_ng_words,
-]
+VALIDATORS = {
+    'term_validator_half_width_katakana'; validate_half_width_katakana,
+    'term_validator_parenthesis'; validate_parenthesis,
+    'term_validator_question_exclamation'; validate_question_exclamation,
+    'term_validator_punctuation_mark'; validate_punctuation_mark,
+    'term_validator_space_in_number_of_unit'; validate_space_in_number_of_unit,
+    'term_validator_ng_words'; validate_ng_words,
+}
+
+
+def load_ng_word_dic(ng_word_rule_file=None):
+    '''
+    NGワードの辞書ファイルへのパスを指定します。
+    辞書ファイルはUTF-8エンコーディングで、以下の形式で記載します::
+
+        正規表現<tab文字>指摘内容
+
+    :param str ng_word_rule_file:
+        * None: use default rule file (default)
+        * filepath: path to NG word dic file
+    '''
+    global NG_WORDS
+    if ng_word_rule_file is None:
+        rule_file = os.path.join(BASEDIR, 'rule.dic')
+    else:
+        rule_file = ng_word_rule_file
+
+    with io.open(rule_file, 'rt', encoding='utf-8') as f:
+        NG_WORDS = [x.strip() for x in [line.split('\t') for line in f]]
 
 
 def doctree_resolved(app, doctree, docname):
+    validators = [v for k, v in VALIDATORS.items() if app.config[k]]
+    load_ng_word_dic(app.config.term_validator_ng_word_rule_file)
+
+
     def text_not_in_literal(node):
         return (isinstance(node, nodes.Text) and
                not isinstance(node.parent,
@@ -246,5 +230,43 @@ def doctree_resolved(app, doctree, docname):
             validator(node.astext(), warn)
 
 
+
 def setup(app):
+
+    # :term_validator_half_width_katakana:
+    #       半角カタカナが含まれる場合に警告します。
+    app.add_config_value('term_validator_half_width_katakana', True, 'env')
+
+    # :term_validator_parenthesis:
+    #       半角カッコ()内に全角文字を含む場合に警告します。
+    app.add_config_value('term_validator_parenthesis', True, 'env')
+
+    # :term_validator_question_exclamation:
+    #       半角疑問符(?)、感嘆符(!)が含まれる場合に警告します。
+    app.add_config_value('term_validator_question_exclamation', True, 'env')
+
+    # :term_validator_punctuation_mark:
+    #       半角カンマ(,)、ピリオド(.)を含む場合に警告します。
+    app.add_config_value('term_validator_punctuation_mark', True, 'env')
+
+    # :term_validator_space_in_number_of_unit:
+    #       "12 Mbps" のような数字と単位の間にスペースを含まない場合に警告します。
+    app.add_config_value('term_validator_space_in_number_of_unit', True, 'env')
+
+    # :term_validator_ng_words:
+    #       `term_validator_ng_word_rule_file` で指定するNGワード辞書に一致する
+    #       NGワードが含まれる場合に警告します。
+    app.add_config_value('term_validator_ng_words', True, 'env')
+
+    # :term_validator_ng_word_rule_file:
+    #       NGワードの辞書ファイルへのパスを指定します。
+    #       辞書ファイルは以下の形式で記載します::
+    #
+    #           正規表現<tab文字>指摘内容
+    #
+    #       :None: use default rule file (default)
+    #       :filepath: (str) path to NG word dic file
+    app.add_config_value('term_validator_ng_word_rule_file', None, 'env')
+
+
     app.connect('doctree-resolved', doctree_resolved)
