@@ -28,8 +28,7 @@ def validate_half_width_katakana(text, warn=lambda t:None):
     """
     If text include half-width-katakana, emit warning.
 
-    :param text: string to validate.
-    :type text: unicode
+    :param unicode text: string to validate.
     :param warn: warning function to emit
     :type warn: function accept 1 argument
     :return: normalized string
@@ -53,8 +52,7 @@ def validate_parenthesis(text, warn=lambda t:None):
     """
     If text include half parenthesis within wide text, emit warning.
 
-    :param text: string to validate.
-    :type text: unicode
+    :param unicode text: string to validate.
     :param warn: warning function to emit
     :type warn: function accept 1 argument
     :return: normalized string
@@ -74,8 +72,7 @@ def validate_question_exclamation(text, warn=lambda t:None):
     """
     If text include half question or exclamatoin, emit warning.
 
-    :param text: string to validate.
-    :type text: unicode
+    :param unicode text: string to validate.
     :param warn: warning function to emit
     :type warn: function accept 1 argument
     :return: normalized string
@@ -97,8 +94,7 @@ def validate_punctuation_mark(text, warn=lambda t:None):
     """
     If text include ascii punctuation mark (.,) emit warning.
 
-    :param text: string to validate.
-    :type text: unicode
+    :param unicode text: string to validate.
     :param warn: warning function to emit
     :type warn: function accept 1 argument
     :return: normalized string
@@ -131,8 +127,7 @@ def validate_space_in_number_of_unit(text, warn=lambda t:None):
     """
     If text did not include space in number of unit as "12 Mbps", emit warning.
 
-    :param text: string to validate.
-    :type text: unicode
+    :param unicode text: string to validate.
     :param warn: warning function to emit
     :type warn: function accept 1 argument
     :return: normalized string
@@ -156,8 +151,7 @@ def validate_ng_words(text, warn=lambda t:None):
     """
     If text include NG words, emit warning.
 
-    :param text: string to validate.
-    :type text: unicode
+    :param unicode text: string to validate.
     :param warn: warning function to emit
     :type warn: function accept 1 argument
     :return: normalized string
