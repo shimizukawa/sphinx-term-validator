@@ -12,6 +12,7 @@ import io
 import os
 import re
 import unicodedata
+from functools import partial
 
 from docutils.utils import column_width
 from docutils import nodes
@@ -81,11 +82,12 @@ def validate_question_exclamation(text, warn=lambda t:None):
     text2 = text
 
     if column_width(text2) != len(text2):
-        text2 = text2.replace(u'?', u'？')
-        text2 = text2.replace(u'!', u'！')
+        for base, mark in re.findall(u'([ぁ-んァ-ヶー一-龠]+)([!?]+)', text2):
+            wide_mark = mark.replace(u'!', u'！').replace(u'?', u'？')
+            text2 = text2.replace(base + mark, base + wide_mark)
 
     if text != text2:
-        warn(u'Half "!", "?" are found\n%s' % text)
+        warn(u'Half "!", "?" after full-width char is found\n%s' % text)
 
     return text2
 
@@ -139,7 +141,7 @@ def validate_space_in_number_of_unit(text, warn=lambda t:None):
     text2 = text
 
     # need insert space at NUMBER+UNIT ex: "12 Mbps"
-    finder = re.compile('([^\w.=()+-])(\d+)([A-Za-z]+)[^\d]').findall
+    finder = re.compile('([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
     for elem in finder(text):
         if elem[-1].lower() != 'html':
             warn(u'Number of unit string need space before unit: "%s"' % u''.join(elem))
@@ -170,12 +172,12 @@ def validate_ng_words(text, warn=lambda t:None):
 
 
 VALIDATORS = {
-    'term_validator_half_width_katakana'; validate_half_width_katakana,
-    'term_validator_parenthesis'; validate_parenthesis,
-    'term_validator_question_exclamation'; validate_question_exclamation,
-    'term_validator_punctuation_mark'; validate_punctuation_mark,
-    'term_validator_space_in_number_of_unit'; validate_space_in_number_of_unit,
-    'term_validator_ng_words'; validate_ng_words,
+    'term_validator_half_width_katakana': validate_half_width_katakana,
+    'term_validator_parenthesis': validate_parenthesis,
+    'term_validator_question_exclamation': validate_question_exclamation,
+    'term_validator_punctuation_mark': validate_punctuation_mark,
+    'term_validator_space_in_number_of_unit': validate_space_in_number_of_unit,
+    'term_validator_ng_words': validate_ng_words,
 }
 
 
@@ -197,7 +199,8 @@ def load_ng_word_dic(ng_word_rule_file=None):
         rule_file = ng_word_rule_file
 
     with io.open(rule_file, 'rt', encoding='utf-8') as f:
-        NG_WORDS = [x.strip() for x in [line.split('\t') for line in f]]
+        lines = (line.split('\t', 1) for line in f)
+        NG_WORDS = [(ng.strip(), good.strip()) for ng, good in lines]
 
 
 def doctree_resolved(app, doctree, docname):
@@ -217,12 +220,17 @@ def doctree_resolved(app, doctree, docname):
                               (todo_node,
                               ))
                )
+
+    logger_method = getattr(app, app.config.term_validator_loglevel.lower())
+    def logger_func(term, lineno):
+        location = '%s:%s' % (app.env.doc2path(docname), lineno or '')
+        msg = u'%s: term_validator:\n%s' % (location, term)
+        logger_method(msg)
+
     for node in doctree.traverse(text_not_in_literal):
         for validator in validators:
-            line = node.line or node.parent.line or node.parent.parent.line
-            warn = lambda t: app.env.warn(docname, u'term_validator:\n' + t, line)
-            validator(node.astext(), warn)
-
+            lineno = node.line or node.parent.line or node.parent.parent.line
+            validator(node.astext(), partial(logger_func, lineno=lineno))
 
 
 def setup(app):
@@ -262,5 +270,8 @@ def setup(app):
     #       :filepath: (str) path to NG word dic file
     app.add_config_value('term_validator_ng_word_rule_file', None, 'env')
 
+    # :term_validator_loglevel:
+    #       log level: info, warn, error
+    app.add_config_value('term_validator_loglevel', 'warn', 'env')
 
     app.connect('doctree-resolved', doctree_resolved)
