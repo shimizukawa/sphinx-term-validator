@@ -16,8 +16,8 @@ rule.dic ファイルに記載された正規表現に一致する記述をド�
 
    $ make html
    ...
-   WARNING: /source/index.rst:100: term_validator:
-   NG word found: (出来[^事] -> でき)
+   WARNING: /source/index.rst:100: term_validator:
+   NG word found: (出来[^事] -> でき)
    ...
 
 ルール辞書
@@ -73,4 +73,3 @@ LICENSE
 ==========
 
 Apache Software License 2.0
-
