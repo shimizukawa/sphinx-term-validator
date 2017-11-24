@@ -5,170 +5,265 @@ docutils term validation extension
 :copyright: Copyright 2011 by Takayuki SHIMIZUKAWA.
 :license: Apache Software License 2.0
 """
-
-__docformat__ = 'reStructuredText'
-
 import io
 import os
 import re
 import unicodedata
 from functools import partial
+import logging
+import difflib
 
+from six import PY2, text_type
 from docutils.utils import column_width
 from docutils import nodes
 
 from sphinx import addnodes
 from sphinx.ext.todo import todo_node
 
+__docformat__ = 'reStructuredText'
+
 BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
 NG_WORDS = []
 
+logger = logging.getLogger(__name__)
+default_warn_logger = logger.warn
 
-def validate_half_width_katakana(text, warn=lambda t:None):
+# compiled re objects
+find_parethesis = re.compile(u'\(([^)]*)\)').findall
+find_question_exclamation = re.compile(u'([ぁ-んァ-ヶー一-龠]+)([!?]+)').findall
+sub_dot_space = re.compile('([^\\d,.])\. ').sub
+sub_dot_newline = re.compile('([^\\d,.])\.\n').sub
+sub_dot_eol = re.compile('([^\\d,.])\.$').sub
+sub_comma_space = re.compile('([^,.]), ').sub
+sub_comma_newline = re.compile('([^,.]),\n').sub
+sub_comma_eol = re.compile('([^,.]),$').sub
+find_numofunit = re.compile('([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
+
+
+if PY2:
+    # copy from py3 textwrap
+    # https://github.com/python/cpython/blob/master/Lib/textwrap.py
+    def _indent(text, prefix, predicate=None):
+        if predicate is None:
+            def predicate(line):
+                return line.strip()
+
+        def prefixed_lines():
+            for line in text.splitlines(True):
+                yield (prefix + line if predicate(line) else line)
+        return ''.join(prefixed_lines())
+
+else:  # py3
+    import textwrap
+    _indent = textwrap.indent
+
+indent = partial(_indent, prefix='  ')
+
+
+def differ(text1, text2):
+    texts = [
+        (t.strip() + '\n').splitlines(keepends=True)
+        for t in (text1, text2)
+    ]
+    diff = difflib.Differ().compare(texts[0], texts[1])
+    return ''.join(diff)
+
+
+class ValidationErrorMessage(object):
+    def __init__(self, error_type,node, target_text, suggestion_text,
+                 source=None, lineno=None):
+        self.error_type = error_type
+        self.node = node
+        self.target_text = target_text
+        self.suggestion_text = suggestion_text
+        self.source = source
+        self.lineno = lineno
+
+    def __str__(self):
+        if len(self.target_text) < 10 and len(self.suggestion_text) < 10:
+            return u'{etype}: ({target} -> {suggestion})\n{node}'.format(
+                etype=self.error_type,
+                target=self.target_text,
+                suggestion=self.suggestion_text,
+                node=indent(self.node.astext()),
+            )
+        else:
+            return u'{etype}:\n{diff}'.format(
+                etype=self.error_type,
+                diff=differ(self.target_text, self.suggestion_text),
+            )
+
+
+def system_message(vmsg, source, lineno):
+    """
+    :param ValidationErrorMessage vmsg: message object
+    :param source: file path
+    :param lineno: lineno
+    :return: system_message node
+    """
+    msg = u'{etype}: {target} -> {suggestion}'.format(
+        etype=vmsg.error_type,
+        target=vmsg.target_text,
+        suggestion=vmsg.suggestion_text,
+    )
+    return nodes.system_message(
+        msg, type='WARNING', level=2, source=source, lineno=lineno
+    )
+
+
+def validate_half_width_katakana(node):
     """
     If text include half-width-katakana, emit warning.
 
-    :param unicode text: string to validate.
-    :param warn: warning function to emit
-    :type warn: function accept 1 argument
-    :return: normalized string
-    :rtype: unicode
+    :param docutils.nodes.Node node: node to validate.
+    :return: list of validation error messages
+    :rtype: List[ValidationErrorMessage]
     """
-    text2 = []
-    for t in text:
+    chars = []
+    for t in node.astext():
         if unicodedata.category(t)[0] in ('L', 'N'):
-            text2.append(unicodedata.normalize('NFKC', t))
+            chars.append(unicodedata.normalize('NFKC', t))
         else:
-            text2.append(t)
+            chars.append(t)
 
-    text2 = ''.join(text2)
-    if text != text2:
-        warn(u'Wide ascii, Wide number or Half kana are found\n%s' % text)
+    text = ''.join(chars)
+    msgs = []
+    if node.astext() != text:
+        msg = ValidationErrorMessage(
+            'Wide ascii, Wide number or Half kana',
+            node, node.astext(), text)
+        msgs.append(msg)
 
-    return text2
+    return msgs
 
 
-def validate_parenthesis(text, warn=lambda t:None):
+def validate_parenthesis(node):
     """
     If text include half parenthesis within wide text, emit warning.
 
-    :param unicode text: string to validate.
-    :param warn: warning function to emit
-    :type warn: function accept 1 argument
-    :return: normalized string
-    :rtype: unicode
+    :param docutils.nodes.Node node: node to validate.
+    :return: list of validation error messages
+    :rtype: List[ValidationErrorMessage]
     """
-    text2 = text
+    text = node.astext()
 
-    for term in re.findall(u'\(([^)]*)\)', text2):
+    msgs = []
+    for term in find_parethesis(text):
         if column_width(term) != len(term):
-            text2 = text2.replace(u'(%s)' % term, u'（%s）' % term)
-            warn(u'Half parenthesis include Wide string\n%s' % term)
+            old_text = text
+            text = text.replace(u'(%s)' % term, u'（%s）' % term)
+            msg = ValidationErrorMessage(
+                'Half parenthesis include Wide string',
+                node, old_text, text)
+            msgs.append(msg)
 
-    return text2
+    return msgs
 
 
-def validate_question_exclamation(text, warn=lambda t:None):
+def validate_question_exclamation(node):
     """
     If text include half question or exclamatoin, emit warning.
 
-    :param unicode text: string to validate.
-    :param warn: warning function to emit
-    :type warn: function accept 1 argument
-    :return: normalized string
-    :rtype: unicode
+    :param docutils.nodes.Node node: node to validate.
+    :return: list of validation error messages
+    :rtype: List[ValidationErrorMessage]
     """
-    text2 = text
+    text = node.astext()
 
-    if column_width(text2) != len(text2):
-        for base, mark in re.findall(u'([ぁ-んァ-ヶー一-龠]+)([!?]+)', text2):
+    if column_width(text) != len(text):
+        for base, mark in find_question_exclamation(text):
             wide_mark = mark.replace(u'!', u'！').replace(u'?', u'？')
-            text2 = text2.replace(base + mark, base + wide_mark)
+            text = text.replace(base + mark, base + wide_mark)
 
-    if text != text2:
-        warn(u'Half "!", "?" after full-width char is found\n%s' % text)
+    msgs = []
+    if text != node.astext():
+        msg = ValidationErrorMessage(
+            'Half "!", "?" after full-width char',
+            node, node.astext(), text)
+        msgs.append(msg)
 
-    return text2
+    return msgs
 
 
-def validate_punctuation_mark(text, warn=lambda t:None):
+def validate_punctuation_mark(node):
     """
     If text include ascii punctuation mark (.,) emit warning.
 
-    :param unicode text: string to validate.
-    :param warn: warning function to emit
-    :type warn: function accept 1 argument
-    :return: normalized string
-    :rtype: unicode
+    :param docutils.nodes.Node node: node to validate.
+    :return: list of validation error messages
+    :rtype: List[ValidationErrorMessage]
     """
+    text = node.astext()
     if not text:
-        return text
+        return []
 
     if column_width(text) == len(text):
-        return text
-
-    text2 = text
+        return []
 
     # replace . with 。
-    text2 = re.sub('[^\d,.]\. ',  u'。',   text2)  # ドット+スペース
-    text2 = re.sub('[^\d,.]\.\n', u'。\n', text2)  # ドット+改行
-    text2 = re.sub('[^\d,.]\.$',  u'。',   text2)  # ドット+終端
+    text = sub_dot_space(u'\\1。',   text)  # ドット+スペース
+    text = sub_dot_newline(u'\\1。\n', text)  # ドット+改行
+    text = sub_dot_eol(u'\\1。',   text)  # ドット+終端
     # replace , with 、
-    text2 = re.sub('[^,.], ',  u'、',   text2)  # カンマ+スペース
-    text2 = re.sub('[^,.],\n', u'、\n', text2)  # カンマ+改行
-    text2 = re.sub('[^,.],$',  u'、',   text2)  # カンマ+終端
+    text = sub_comma_space(u'\\1、',   text)  # カンマ+スペース
+    text = sub_comma_newline(u'\\1、\n', text)  # カンマ+改行
+    text = sub_comma_eol(u'\\1、',   text)  # カンマ+終端
 
-    if text != text2:
-        warn(u'ASCII punctuation mark are found\n%s' % text)
+    msgs = []
+    if text != node.astext():
+        msg = ValidationErrorMessage(
+            'ASCII punctuation mark', node, node.astext(), text)
+        msgs.append(msg)
 
-    return text2
+    return msgs
 
 
-def validate_space_in_number_of_unit(text, warn=lambda t:None):
+def validate_space_in_number_of_unit(node):
     """
     If text did not include space in number of unit as "12 Mbps", emit warning.
 
-    :param unicode text: string to validate.
-    :param warn: warning function to emit
-    :type warn: function accept 1 argument
-    :return: normalized string
-    :rtype: unicode
+    :param docutils.nodes.Node node: node to validate.
+    :return: list of validation error messages
+    :rtype: List[ValidationErrorMessage]
     """
+    text = node.astext()
     if not text:
-        return text
-
-    text2 = text
+        return []
 
     # need insert space at NUMBER+UNIT ex: "12 Mbps"
-    finder = re.compile('([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
-    for elem in finder(text):
+    msgs = []
+    for elem in find_numofunit(text):
         if elem[-1].lower() != 'html':
-            warn(u'Number of unit string need space before unit: "%s"' % u''.join(elem))
+            msg = ValidationErrorMessage(
+                'Space in number of unit', node, u''.join(elem),
+                'Number of unit string need space before unit')
+            msgs.append(msg)
 
-    return text2
+    return msgs
 
 
-def validate_ng_words(text, warn=lambda t:None):
+def validate_ng_words(node):
     """
     If text include NG words, emit warning.
 
-    :param unicode text: string to validate.
-    :param warn: warning function to emit
-    :type warn: function accept 1 argument
-    :return: normalized string
-    :rtype: unicode
+    :param docutils.nodes.Node node: node to validate.
+    :return: list of validation error messages
+    :rtype: List[ValidationErrorMessage]
     """
+    text = node.astext()
     if not text:
-        return text
+        return []
 
-    text2 = text
+    msgs = []
+    for finder, ng, good in NG_WORDS:
+        found = finder(text)
+        if found:
+            msg = ValidationErrorMessage(
+                'NG word', node, found.group(0), good)
+            msgs.append(msg)
 
-    for ng, good in NG_WORDS:
-        if re.findall(ng, text):
-            warn(u'NG word found: (%s -> %s)\n%s' % (ng, good, text))
-
-    return text2
+    return msgs
 
 
 VALIDATORS = {
@@ -188,6 +283,8 @@ def load_ng_word_dic(ng_word_rule_file=None):
 
         正規表現<tab文字>指摘内容
 
+    空行と、行頭が#の行はスキップします
+
     :param str ng_word_rule_file:
         * None: use default rule file (default)
         * filepath: path to NG word dic file
@@ -199,38 +296,55 @@ def load_ng_word_dic(ng_word_rule_file=None):
         rule_file = ng_word_rule_file
 
     with io.open(rule_file, 'rt', encoding='utf-8') as f:
-        lines = (line.split('\t', 1) for line in f)
-        NG_WORDS = [(ng.strip(), good.strip()) for ng, good in lines]
+        lines = (
+            line.split('\t', 1)
+            for line in f
+            if (line) and (not line.startswith('#')) and ('\t' in line)
+        )
+        NG_WORDS = [
+            (re.compile('(%s)' % ng.strip()).search, ng.strip(), good.strip())
+            for ng, good in lines
+        ]
 
 
 def doctree_resolved(app, doctree, docname):
     validators = [v for k, v in VALIDATORS.items() if app.config[k]]
     load_ng_word_dic(app.config.term_validator_ng_word_rule_file)
 
+    def isdescendant(node, types):
+        while node is not None:
+            if isinstance(node, types):
+                return True
+            node = node.parent
+        return False
 
     def text_not_in_literal(node):
         return (isinstance(node, nodes.Text) and
-               not isinstance(node.parent,
-                              (nodes.literal,
-                               nodes.literal_block,
-                               nodes.raw,
-                               nodes.comment,
-                              )) and
-               not isinstance(node.parent.parent,
-                              (todo_node,
-                              ))
+               not isdescendant(node.parent,
+                                (nodes.literal,
+                                 nodes.literal_block,
+                                 nodes.raw,
+                                 nodes.comment,
+                                 todo_node,
+                                ))
                )
 
     logger_method = getattr(app, app.config.term_validator_loglevel.lower())
-    def logger_func(term, lineno):
-        location = '%s:%s' % (app.env.doc2path(docname), lineno or '')
-        msg = u'%s: term_validator:\n%s' % (location, term)
-        logger_method(msg)
+
+    source = app.env.doc2path(docname)
 
     for node in doctree.traverse(text_not_in_literal):
         for validator in validators:
             lineno = node.line or node.parent.line or node.parent.parent.line
-            validator(node.astext(), partial(logger_func, lineno=lineno))
+            msgs = validator(node)
+            if 1:  # もしconsoleならmsgsをlogger_funcに流す
+                for msg in msgs:
+                    logger_method(u'%s:%s sphinx_term_validator:\n%s' %
+                                  (source, lineno, indent(text_type(msg))))
+            if 1:  # ページ埋め込みなら、nodeに追加する
+                for msg in msgs:
+                    sm = system_message(msg, source, lineno)
+                    node.parent += sm
 
 
 def setup(app):
