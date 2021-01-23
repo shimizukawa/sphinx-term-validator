@@ -10,7 +10,6 @@ import os
 import re
 import unicodedata
 from functools import partial
-import logging
 import difflib
 
 from six import PY2, text_type
@@ -19,6 +18,7 @@ from docutils import nodes
 
 from sphinx import addnodes
 from sphinx.ext.todo import todo_node
+from sphinx.util import logging
 
 __docformat__ = 'reStructuredText'
 
@@ -329,7 +329,7 @@ def doctree_resolved(app, doctree, docname):
                                 ))
                )
 
-    logger_method = getattr(app, app.config.term_validator_loglevel.lower())
+    logger_method = getattr(logger, app.config.term_validator_loglevel.lower())
 
     source = app.env.doc2path(docname)
 
@@ -386,6 +386,6 @@ def setup(app):
 
     # :term_validator_loglevel:
     #       log level: info, warn, error
-    app.add_config_value('term_validator_loglevel', 'warn', 'env')
+    app.add_config_value('term_validator_loglevel', 'warning', 'env')
 
     app.connect('doctree-resolved', doctree_resolved)
