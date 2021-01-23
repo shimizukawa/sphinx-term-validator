@@ -10,14 +10,13 @@ import os
 import re
 import unicodedata
 from functools import partial
-import logging
+from sphinx.util import logging
 import difflib
 import textwrap
 
 from docutils.utils import column_width
 from docutils import nodes
 
-from sphinx import addnodes
 from sphinx.ext.todo import todo_node
 
 __docformat__ = 'reStructuredText'
@@ -27,18 +26,18 @@ BASEDIR = os.path.dirname(os.path.abspath(__file__))
 NG_WORDS = []
 
 logger = logging.getLogger(__name__)
-default_warn_logger = logger.warn
+default_warn_logger = logger.warning
 
 # compiled re objects
-find_parethesis = re.compile(u'\(([^)]*)\)').findall
-find_question_exclamation = re.compile(u'([ぁ-んァ-ヶー一-龠]+)([!?]+)').findall
-sub_dot_space = re.compile('([^\\d,.])\. ').sub
-sub_dot_newline = re.compile('([^\\d,.])\.\n').sub
-sub_dot_eol = re.compile('([^\\d,.])\.$').sub
-sub_comma_space = re.compile('([^,.]), ').sub
-sub_comma_newline = re.compile('([^,.]),\n').sub
-sub_comma_eol = re.compile('([^,.]),$').sub
-find_numofunit = re.compile('([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
+find_parethesis = re.compile(r'\(([^)]*)\)').findall
+find_question_exclamation = re.compile(r'([ぁ-んァ-ヶー一-龠]+)([!?]+)').findall
+sub_dot_space = re.compile(r'([^\d,.])\. ').sub
+sub_dot_newline = re.compile(r'([^\d,.])\.\n').sub
+sub_dot_eol = re.compile(r'([^\d,.])\.$').sub
+sub_comma_space = re.compile(r'([^,.]), ').sub
+sub_comma_newline = re.compile(r'([^,.]),\n').sub
+sub_comma_eol = re.compile(r'([^,.]),$').sub
+find_numofunit = re.compile(r'([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
 
 
 indent = partial(textwrap.indent, prefix='  ')
@@ -312,7 +311,7 @@ def doctree_resolved(app, doctree, docname):
                                 ))
                )
 
-    logger_method = getattr(app, app.config.term_validator_loglevel.lower())
+    logger_method = getattr(logger, app.config.term_validator_loglevel.lower())
 
     source = app.env.doc2path(docname)
 
@@ -369,6 +368,6 @@ def setup(app):
 
     # :term_validator_loglevel:
     #       log level: info, warn, error
-    app.add_config_value('term_validator_loglevel', 'warn', 'env')
+    app.add_config_value('term_validator_loglevel', 'warning', 'env')
 
     app.connect('doctree-resolved', doctree_resolved)
