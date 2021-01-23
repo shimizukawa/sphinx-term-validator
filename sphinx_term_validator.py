@@ -12,8 +12,8 @@ import unicodedata
 from functools import partial
 import logging
 import difflib
+import textwrap
 
-from six import PY2, text_type
 from docutils.utils import column_width
 from docutils import nodes
 
@@ -41,24 +41,7 @@ sub_comma_eol = re.compile('([^,.]),$').sub
 find_numofunit = re.compile('([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
 
 
-if PY2:
-    # copy from py3 textwrap
-    # https://github.com/python/cpython/blob/master/Lib/textwrap.py
-    def _indent(text, prefix, predicate=None):
-        if predicate is None:
-            def predicate(line):
-                return line.strip()
-
-        def prefixed_lines():
-            for line in text.splitlines(True):
-                yield (prefix + line if predicate(line) else line)
-        return ''.join(prefixed_lines())
-
-else:  # py3
-    import textwrap
-    _indent = textwrap.indent
-
-indent = partial(_indent, prefix='  ')
+indent = partial(textwrap.indent, prefix='  ')
 
 
 def differ(text1, text2):
@@ -340,7 +323,7 @@ def doctree_resolved(app, doctree, docname):
             if 1:  # もしconsoleならmsgsをlogger_funcに流す
                 for msg in msgs:
                     logger_method(u'%s:%s sphinx_term_validator:\n%s' %
-                                  (source, lineno, indent(text_type(msg))))
+                                  (source, lineno, indent(msg)))
             if 1:  # ページ埋め込みなら、nodeに追加する
                 for msg in msgs:
                     sm = system_message(msg, source, lineno)
