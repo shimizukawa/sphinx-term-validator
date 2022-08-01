@@ -69,6 +69,48 @@ conf.py
    警告ログのレベルを指定します。レベルは ``info``, ``warn``, ``error`` から指定します。
    デフォルトは ``warn`` です。
 
+VS Code
+===========
+
+tasks.json::
+
+   {
+      // See https://go.microsoft.com/fwlink/?LinkId=733558
+      // for the documentation about the tasks.json format
+      "version": "2.0.0",
+      "tasks": [
+         {
+               "label": "build html",
+               "type": "shell",
+               "options": {
+                  "cwd": "${workspaceFolder}"
+               },
+               "command": "${command:python.interpreterPath}",
+               "args": [
+                  "-m", "sphinx", "-M", "html", "source", "build"
+               ],
+               "problemMatcher": {
+                  "owner": "python",
+                  "fileLocation": ["absolute"],
+                  "pattern": {
+                     "regexp": "^(.*):(\\d+):(\\d+)-(\\d+):\\s+(WARNING|ERROR):\\s+(.*)$",
+                     "file": 1,
+                     "line": 2,
+                     "column": 3,
+                     "endColumn": 4,
+                     "severity": 5,
+                     "message": 6
+                  }
+               },
+               "group": {
+                  "kind": "build",
+                  "isDefault": true
+               }
+         }
+      ]
+   }
+
+
 LICENSE
 ==========
 

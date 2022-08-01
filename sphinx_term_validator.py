@@ -5,19 +5,19 @@ docutils term validation extension
 :copyright: Copyright 2011 by Takayuki SHIMIZUKAWA.
 :license: Apache Software License 2.0
 """
+import difflib
 import io
 import os
 import re
+import textwrap
 import unicodedata
 from functools import partial
-from sphinx.util import logging
-import difflib
-import textwrap
 
 from docutils.utils import column_width
 from docutils import nodes
 
 from sphinx.ext.todo import todo_node
+from sphinx.util import logging
 
 __docformat__ = 'reStructuredText'
 
@@ -39,7 +39,7 @@ sub_comma_newline = re.compile(r'([^,.]),\n').sub
 sub_comma_eol = re.compile(r'([^,.]),$').sub
 find_numofunit = re.compile(r'([^\w.%=()+-])(\d+)([A-Za-z]+)[^\d]').findall
 
-
+# indent
 indent = partial(textwrap.indent, prefix='  ')
 
 
@@ -53,17 +53,44 @@ def differ(text1, text2):
 
 
 class ValidationErrorMessage(object):
-    def __init__(self, error_type,node, target_text, suggestion_text,
-                 source=None, lineno=None):
+    def __init__(self, error_type, node, target_text, suggestion_text):
         self.error_type = error_type
         self.node = node
         self.target_text = target_text
         self.suggestion_text = suggestion_text
-        self.source = source
-        self.lineno = lineno
+        self.lineno = None
+        self.start_col = None
+        self.end_col = None
+        self.set_location()
+
+    def set_location(self):
+        node = self.node
+        target_text = self.target_text
+
+        # line
+        self.lineno = node.line or node.parent.line or node.parent.parent.line
+
+        # find block
+        while not isinstance(node, nodes.TextElement):
+            node = node.parent
+            if node is None:
+                return None, None
+
+        lines = node.rawsource.splitlines()
+        for i, line in enumerate(lines):
+            start_col = line.find(target_text)
+            if start_col >= 0:
+                self.start_col = start_col+1
+                self.end_col = self.start_col + len(target_text)
+                if self.lineno is not None:
+                    self.lineno += i
+
+    @property
+    def location(self):
+        return f"{self.lineno}:{self.start_col}-{self.end_col}"
 
     def __str__(self):
-        if len(self.target_text) < 10 and len(self.suggestion_text) < 10:
+        if len(self.target_text) < 20 and len(self.suggestion_text) < 20:
             return u'{etype}: ({target} -> {suggestion})\n{node}'.format(
                 etype=self.error_type,
                 target=self.target_text,
@@ -313,19 +340,17 @@ def doctree_resolved(app, doctree, docname):
 
     logger_method = getattr(logger, app.config.term_validator_loglevel.lower())
 
-    source = app.env.doc2path(docname)
-
     for node in doctree.traverse(text_not_in_literal):
         for validator in validators:
-            lineno = node.line or node.parent.line or node.parent.parent.line
             msgs = validator(node)
             if 1:  # もしconsoleならmsgsをlogger_funcに流す
                 for msg in msgs:
-                    logger_method(u'%s:%s sphinx_term_validator:\n%s' %
-                                  (source, lineno, indent(msg)))
+                    docpath = app.env.doc2path(docname)
+                    location = f"{docpath}:{msg.location}"
+                    logger_method(u'sphinx_term_validator: %s', msg, location=location)
             if 1:  # ページ埋め込みなら、nodeに追加する
                 for msg in msgs:
-                    sm = system_message(msg, source, lineno)
+                    sm = system_message(msg, docname, msg.lineno)
                     node.parent += sm
 
 
