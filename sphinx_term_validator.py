@@ -348,7 +348,7 @@ def doctree_resolved(app, doctree, docname):
                     docpath = app.env.doc2path(docname)
                     location = f"{docpath}:{msg.location}"
                     logger_method(u'sphinx_term_validator: %s', msg, location=location)
-            if app.config.term_validator_restrict_embed_warning:
+            if not app.config.term_validator_restrict_embed_warning:
                 # ページ埋め込みなら、nodeに追加する
                 for msg in msgs:
                     sm = system_message(msg, docname, msg.lineno)
