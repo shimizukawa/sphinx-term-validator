@@ -348,7 +348,8 @@ def doctree_resolved(app, doctree, docname):
                     docpath = app.env.doc2path(docname)
                     location = f"{docpath}:{msg.location}"
                     logger_method(u'sphinx_term_validator: %s', msg, location=location)
-            if 1:  # ページ埋め込みなら、nodeに追加する
+            if not app.config.term_validator_restrict_embed_warning:
+                # ページ埋め込みなら、nodeに追加する
                 for msg in msgs:
                     sm = system_message(msg, docname, msg.lineno)
                     node.parent += sm
@@ -394,5 +395,9 @@ def setup(app):
     # :term_validator_loglevel:
     #       log level: info, warn, error
     app.add_config_value('term_validator_loglevel', 'warning', 'env')
+
+    # :term_validator_restrict_embed_warning:
+    #       ファイル埋め込みの警告を抑止します。
+    app.add_config_value('term_validator_restrict_embed_warning', False, 'env')
 
     app.connect('doctree-resolved', doctree_resolved)

@@ -69,6 +69,9 @@ conf.py
    警告ログのレベルを指定します。レベルは ``info``, ``warn``, ``error`` から指定します。
    デフォルトは ``warn`` です。
 
+:term_validator_restrict_embed_warning:
+   ファイル埋め込みの警告を抑止します。デフォルトはFalseです。
+
 VS Code
 ===========
 
