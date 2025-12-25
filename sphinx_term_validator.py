@@ -67,8 +67,12 @@ class ValidationErrorMessage(object):
         node = self.node
         target_text = self.target_text
 
-        # line
-        self.lineno = node.line or node.parent.line or node.parent.parent.line
+        # line - safely traverse parent chain
+        self.lineno = getattr(node, 'line', None)
+        if self.lineno is None and node.parent is not None:
+            self.lineno = getattr(node.parent, 'line', None)
+        if self.lineno is None and node.parent is not None and node.parent.parent is not None:
+            self.lineno = getattr(node.parent.parent, 'line', None)
 
         # find block
         while not isinstance(node, nodes.TextElement):
@@ -352,7 +356,8 @@ def doctree_resolved(app, doctree, docname):
                 # ページ埋め込みなら、nodeに追加する
                 for msg in msgs:
                     sm = system_message(msg, docname, msg.lineno)
-                    node.parent += sm
+                    if node.parent is not None:
+                        node.parent += sm
 
 
 def setup(app):
